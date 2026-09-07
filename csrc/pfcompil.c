@@ -915,6 +915,9 @@ void pfHandleIncludeError( void )
 /***************************************************************
 ** Interpret input in a loop.
 ***************************************************************/
+#define PF_SHMEM_BROADCAST64_COUNT(byte_count) \
+    (((byte_count) + sizeof(uint64_t) - 1) / sizeof(uint64_t))
+
 ThrowCode ffOuterInterpreterLoop( void )
 {
     static cell_t exception = 0;
@@ -934,7 +937,7 @@ ThrowCode ffOuterInterpreterLoop( void )
         shmem_barrier_all();
         shmem_broadcast64(gCurrentTask,
                           gCurrentTask,
-                          sizeof(pfTaskData_t),
+                          PF_SHMEM_BROADCAST64_COUNT(sizeof(pfTaskData_t)),
                           0,
                           0,
                           0,
@@ -943,7 +946,7 @@ ThrowCode ffOuterInterpreterLoop( void )
         shmem_barrier_all();
         shmem_broadcast64(gCurrentTask->td_TIB,
                           gCurrentTask->td_TIB,
-                          gCurrentTask->td_SourceNum,
+                          PF_SHMEM_BROADCAST64_COUNT(gCurrentTask->td_SourceNum),
                           0,
                           0,
                           0,
@@ -973,6 +976,8 @@ ThrowCode ffOuterInterpreterLoop( void )
     } while( exception == 0 );
     return exception;
 }
+
+#undef PF_SHMEM_BROADCAST64_COUNT
 
 /***************************************************************
 ** Include then close a file

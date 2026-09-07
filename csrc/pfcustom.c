@@ -30,11 +30,64 @@
 
 
 #include "pf_all.h"
-#include <shmem.h>
+#include "pf_shmem.h"
+
+unsigned long wtime( void );
 #include "pf_wtime.c"
 
-static void pf_shmem_put(cell_t dest, cell_t source, cell_t nelems, cell_t pe);
-static void pf_shmem_get(cell_t dest, cell_t source, cell_t nelems, cell_t pe);
+static cell_t pf_shmem_put(cell_t dest, cell_t source, cell_t nelems, cell_t pe);
+static cell_t pf_shmem_get(cell_t dest, cell_t source, cell_t nelems, cell_t pe);
+static cell_t pf_shmem_put32(cell_t dest, cell_t source, cell_t nelems, cell_t pe);
+static cell_t pf_shmem_get32(cell_t dest, cell_t source, cell_t nelems, cell_t pe);
+static cell_t pf_shmem_global_exit(cell_t status);
+static cell_t pf_shmem_barrier(cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync);
+static cell_t pf_shmem_malloc(cell_t size);
+static cell_t pf_shmem_free(cell_t addr);
+static cell_t pf_shmem_ptr(cell_t addr, cell_t pe);
+static cell_t pf_shmem_broadcast64(cell_t target, cell_t source, cell_t nelems, cell_t PE_root,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync);
+static cell_t pf_shmem_broadcast32(cell_t target, cell_t source, cell_t nelems, cell_t PE_root,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync);
+static cell_t pf_shmem_collect64(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync);
+static cell_t pf_shmem_fcollect64(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync);
+static cell_t pf_shmem_alltoall64(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync);
+static cell_t pf_shmem_collect32(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync);
+static cell_t pf_shmem_fcollect32(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync);
+static cell_t pf_shmem_alltoall32(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync);
+static cell_t pf_shmem_int_and_to_all(cell_t target, cell_t source, cell_t nreduce,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync);
+static cell_t pf_shmem_int_max_to_all(cell_t target, cell_t source, cell_t nreduce,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync);
+static cell_t pf_shmem_int_min_to_all(cell_t target, cell_t source, cell_t nreduce,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync);
+static cell_t pf_shmem_int_sum_to_all(cell_t target, cell_t source, cell_t nreduce,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync);
+static cell_t pf_shmem_int_prod_to_all(cell_t target, cell_t source, cell_t nreduce,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync);
+static cell_t pf_shmem_int_or_to_all(cell_t target, cell_t source, cell_t nreduce,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync);
+static cell_t pf_shmem_int_xor_to_all(cell_t target, cell_t source, cell_t nreduce,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync);
+static cell_t pf_shmem_double_sum_to_all(cell_t target, cell_t source, cell_t nreduce,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync);
+static cell_t pf_shmem_fence(void);
+static cell_t pf_shmem_set_lock(cell_t lock);
+static cell_t pf_shmem_clear_lock(cell_t lock);
+static cell_t pf_shmem_test_lock(cell_t lock);
+static cell_t pf_shmem_long_atomic_fetch(cell_t target, cell_t pe);
+static cell_t pf_shmem_long_atomic_set(cell_t target, cell_t value, cell_t pe);
+static cell_t pf_shmem_long_atomic_add(cell_t target, cell_t value, cell_t pe);
+static cell_t pf_shmem_long_atomic_fetch_add(cell_t target, cell_t value, cell_t pe);
+static cell_t pf_shmem_long_atomic_swap(cell_t target, cell_t value, cell_t pe);
+static cell_t pf_shmem_long_atomic_compare_swap(cell_t target, cell_t cond, cell_t value, cell_t pe);
+static cell_t pf_shmem_long_atomic_inc(cell_t target, cell_t pe);
+static cell_t pf_shmem_long_atomic_fetch_inc(cell_t target, cell_t pe);
 /****************************************************************
 ** Step 1: Put your own special glue routines here
 **     or link them in from another file or library.
@@ -43,17 +96,215 @@ static void pf_shmem_get(cell_t dest, cell_t source, cell_t nelems, cell_t pe);
    The rest will be handled in FORTH code
 */
 
-static void pf_shmem_put(cell_t dest, cell_t source, cell_t nelems, cell_t pe)
+static cell_t pf_shmem_put(cell_t dest, cell_t source, cell_t nelems, cell_t pe)
 {
-    /* 2 64 bit addrs + 64 bit len + 32 bit PE = 20 bytes */
     //fprintf(stderr, "SHMEM_PUT: %p %p  0x%08x 0x%08x\n", M_STACK(3), M_STACK(2), M_STACK(1), M_STACK(0));
-    shmem_putmem((char*)dest, (char*)source, (size_t)nelems*2, (int)pe);
+    shmem_putmem((char*)dest, (char*)source, (size_t)nelems * sizeof(cell_t), (int)pe);
+    return 0;
 }
 
-static void pf_shmem_get(cell_t dest, cell_t source, cell_t nelems, cell_t pe)
+static cell_t pf_shmem_get(cell_t dest, cell_t source, cell_t nelems, cell_t pe)
 {
     //fprintf(stderr, "SHMEM_GET: %p %p  0x%08x 0x%08x\n", M_STACK(3), M_STACK(2), M_STACK(1), M_STACK(0));
-    shmem_getmem((char*)dest, (char*)source, (size_t)nelems*2, (int)pe);
+    shmem_getmem((char*)dest, (char*)source, (size_t)nelems * sizeof(cell_t), (int)pe);
+    return 0;
+}
+
+static cell_t pf_shmem_put32(cell_t dest, cell_t source, cell_t nelems, cell_t pe)
+{
+    shmem_put32((void*)dest, (void*)source, (size_t)nelems, (int)pe);
+    return 0;
+}
+
+static cell_t pf_shmem_get32(cell_t dest, cell_t source, cell_t nelems, cell_t pe)
+{
+    shmem_get32((void*)dest, (void*)source, (size_t)nelems, (int)pe);
+    return 0;
+}
+
+static cell_t pf_shmem_global_exit(cell_t status)
+{
+    shmem_global_exit((int)status);
+    return 0;
+}
+
+static cell_t pf_shmem_barrier(cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync)
+{
+    shmem_barrier((int)PE_start, (int)logPE_stride, (int)PE_size, (long*)sync);
+    return 0;
+}
+
+static cell_t pf_shmem_malloc(cell_t size)
+{
+    return (cell_t)shmem_malloc((size_t)size);
+}
+
+static cell_t pf_shmem_free(cell_t addr)
+{
+    shmem_free((void*)addr);
+    return 0;
+}
+
+static cell_t pf_shmem_ptr(cell_t addr, cell_t pe)
+{
+    return (cell_t)shmem_ptr((void*)addr, (int)pe);
+}
+
+static cell_t pf_shmem_broadcast64(cell_t target, cell_t source, cell_t nelems, cell_t PE_root,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync)
+{
+    shmem_broadcast64((void*)target, (void*)source, (size_t)nelems, (int)PE_root,
+        (int)PE_start, (int)logPE_stride, (int)PE_size, (long*)sync);
+    return 0;
+}
+
+static cell_t pf_shmem_broadcast32(cell_t target, cell_t source, cell_t nelems, cell_t PE_root,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync)
+{
+    shmem_broadcast32((void*)target, (void*)source, (size_t)nelems, (int)PE_root,
+        (int)PE_start, (int)logPE_stride, (int)PE_size, (long*)sync);
+    return 0;
+}
+
+static cell_t pf_shmem_collect64(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync)
+{
+    shmem_collect64((void*)target, (void*)source, (size_t)nelems,
+        (int)PE_start, (int)logPE_stride, (int)PE_size, (long*)sync);
+    return 0;
+}
+
+static cell_t pf_shmem_fcollect64(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync)
+{
+    shmem_fcollect64((void*)target, (void*)source, (size_t)nelems,
+        (int)PE_start, (int)logPE_stride, (int)PE_size, (long*)sync);
+    return 0;
+}
+
+static cell_t pf_shmem_alltoall64(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync)
+{
+    shmem_alltoall64((void*)target, (void*)source, (size_t)nelems,
+        (int)PE_start, (int)logPE_stride, (int)PE_size, (long*)sync);
+    return 0;
+}
+
+static cell_t pf_shmem_collect32(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync)
+{
+    shmem_collect32((void*)target, (void*)source, (size_t)nelems,
+        (int)PE_start, (int)logPE_stride, (int)PE_size, (long*)sync);
+    return 0;
+}
+
+static cell_t pf_shmem_fcollect32(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync)
+{
+    shmem_fcollect32((void*)target, (void*)source, (size_t)nelems,
+        (int)PE_start, (int)logPE_stride, (int)PE_size, (long*)sync);
+    return 0;
+}
+
+static cell_t pf_shmem_alltoall32(cell_t target, cell_t source, cell_t nelems,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t sync)
+{
+    shmem_alltoall32((void*)target, (void*)source, (size_t)nelems,
+        (int)PE_start, (int)logPE_stride, (int)PE_size, (long*)sync);
+    return 0;
+}
+
+#define PF_SHMEM_INT_REDUCTION(name) \
+static cell_t pf_##name(cell_t target, cell_t source, cell_t nreduce, \
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync) \
+{ \
+    name((int*)target, (int*)source, (int)nreduce, (int)PE_start, \
+        (int)logPE_stride, (int)PE_size, (int*)work, (long*)sync); \
+    return 0; \
+}
+
+PF_SHMEM_INT_REDUCTION(shmem_int_and_to_all)
+PF_SHMEM_INT_REDUCTION(shmem_int_max_to_all)
+PF_SHMEM_INT_REDUCTION(shmem_int_min_to_all)
+PF_SHMEM_INT_REDUCTION(shmem_int_sum_to_all)
+PF_SHMEM_INT_REDUCTION(shmem_int_prod_to_all)
+PF_SHMEM_INT_REDUCTION(shmem_int_or_to_all)
+PF_SHMEM_INT_REDUCTION(shmem_int_xor_to_all)
+
+#undef PF_SHMEM_INT_REDUCTION
+
+static cell_t pf_shmem_double_sum_to_all(cell_t target, cell_t source, cell_t nreduce,
+    cell_t PE_start, cell_t logPE_stride, cell_t PE_size, cell_t work, cell_t sync)
+{
+    shmem_double_sum_to_all((double*)target, (double*)source, (int)nreduce, (int)PE_start,
+        (int)logPE_stride, (int)PE_size, (double*)work, (long*)sync);
+    return 0;
+}
+
+static cell_t pf_shmem_fence(void)
+{
+    shmem_fence();
+    return 0;
+}
+
+static cell_t pf_shmem_set_lock(cell_t lock)
+{
+    shmem_set_lock((long*)lock);
+    return 0;
+}
+
+static cell_t pf_shmem_clear_lock(cell_t lock)
+{
+    shmem_clear_lock((long*)lock);
+    return 0;
+}
+
+static cell_t pf_shmem_test_lock(cell_t lock)
+{
+    return (cell_t)shmem_test_lock((long*)lock);
+}
+
+static cell_t pf_shmem_long_atomic_fetch(cell_t target, cell_t pe)
+{
+    return (cell_t)shmem_long_atomic_fetch((long*)target, (int)pe);
+}
+
+static cell_t pf_shmem_long_atomic_set(cell_t target, cell_t value, cell_t pe)
+{
+    shmem_long_atomic_set((long*)target, (long)value, (int)pe);
+    return 0;
+}
+
+static cell_t pf_shmem_long_atomic_add(cell_t target, cell_t value, cell_t pe)
+{
+    shmem_long_atomic_add((long*)target, (long)value, (int)pe);
+    return 0;
+}
+
+static cell_t pf_shmem_long_atomic_fetch_add(cell_t target, cell_t value, cell_t pe)
+{
+    return (cell_t)shmem_long_atomic_fetch_add((long*)target, (long)value, (int)pe);
+}
+
+static cell_t pf_shmem_long_atomic_swap(cell_t target, cell_t value, cell_t pe)
+{
+    return (cell_t)shmem_long_atomic_swap((long*)target, (long)value, (int)pe);
+}
+
+static cell_t pf_shmem_long_atomic_compare_swap(cell_t target, cell_t cond, cell_t value, cell_t pe)
+{
+    return (cell_t)shmem_long_atomic_compare_swap((long*)target, (long)cond, (long)value, (int)pe);
+}
+
+static cell_t pf_shmem_long_atomic_inc(cell_t target, cell_t pe)
+{
+    shmem_long_atomic_inc((long*)target, (int)pe);
+    return 0;
+}
+
+static cell_t pf_shmem_long_atomic_fetch_inc(cell_t target, cell_t pe)
+{
+    return (cell_t)shmem_long_atomic_fetch_inc((long*)target, (int)pe);
 }
 
 /****************************************************************
@@ -70,7 +321,7 @@ static void pf_shmem_get(cell_t dest, cell_t source, cell_t nelems, cell_t pe)
 ** Do not change the name of LoadCustomFunctionTable()!
 ** It is called by the pForth kernel.
 */
-#define NUM_CUSTOM_FUNCTIONS  (6)
+#define NUM_CUSTOM_FUNCTIONS  (43)
 CFunc0 CustomFunctionTable[NUM_CUSTOM_FUNCTIONS];
 
 Err LoadCustomFunctionTable( void )
@@ -87,27 +338,47 @@ CFunc0 CustomFunctionTable[] =
 {
     (CFunc0) shmem_n_pes,
     (CFunc0) shmem_my_pe,
-    (CFunc4) pf_shmem_put,
-    (CFunc4) pf_shmem_get,
-    (CFunc1) shmem_global_exit,
-    (CFunc4) shmem_barrier,
+    (CFunc0) pf_shmem_put,
+    (CFunc0) pf_shmem_get,
+    (CFunc0) pf_shmem_global_exit,
+    (CFunc0) pf_shmem_barrier,
     (CFunc0) shmem_barrier_all,
-    (CFunc1) shmem_malloc,
-    (CFunc8) shmem_broadcast64,
+    (CFunc0) pf_shmem_malloc,
+    (CFunc0) pf_shmem_broadcast64,
     (CFunc0) shmem_sync_all,
-    (CFunc7) shmem_collect64,
-    (CFunc7) shmem_fcollect64,
-    (CFunc8) shmem_int_and_to_all,
-    (CFunc8) shmem_int_max_to_all,
-    (CFunc8) shmem_int_min_to_all,
-    (CFunc8) shmem_int_sum_to_all,
-    (CFunc8) shmem_int_prod_to_all,
-    (CFunc8) shmem_int_or_to_all,
-    (CFunc8) shmem_int_xor_to_all,
-    (CFunc7) shmem_alltoall64,
-    (CFunc8) shmem_double_sum_to_all,
+    (CFunc0) pf_shmem_collect64,
+    (CFunc0) pf_shmem_fcollect64,
+    (CFunc0) pf_shmem_int_and_to_all,
+    (CFunc0) pf_shmem_int_max_to_all,
+    (CFunc0) pf_shmem_int_min_to_all,
+    (CFunc0) pf_shmem_int_sum_to_all,
+    (CFunc0) pf_shmem_int_prod_to_all,
+    (CFunc0) pf_shmem_int_or_to_all,
+    (CFunc0) pf_shmem_int_xor_to_all,
+    (CFunc0) pf_shmem_alltoall64,
+    (CFunc0) pf_shmem_double_sum_to_all,
     (CFunc0) shmem_quiet,
     (CFunc0) wtime,
+    (CFunc0) pf_shmem_free,
+    (CFunc0) pf_shmem_put32,
+    (CFunc0) pf_shmem_get32,
+    (CFunc0) pf_shmem_broadcast32,
+    (CFunc0) pf_shmem_collect32,
+    (CFunc0) pf_shmem_fcollect32,
+    (CFunc0) pf_shmem_alltoall32,
+    (CFunc0) pf_shmem_fence,
+    (CFunc0) pf_shmem_ptr,
+    (CFunc0) pf_shmem_set_lock,
+    (CFunc0) pf_shmem_clear_lock,
+    (CFunc0) pf_shmem_test_lock,
+    (CFunc0) pf_shmem_long_atomic_fetch,
+    (CFunc0) pf_shmem_long_atomic_set,
+    (CFunc0) pf_shmem_long_atomic_add,
+    (CFunc0) pf_shmem_long_atomic_fetch_add,
+    (CFunc0) pf_shmem_long_atomic_swap,
+    (CFunc0) pf_shmem_long_atomic_compare_swap,
+    (CFunc0) pf_shmem_long_atomic_inc,
+    (CFunc0) pf_shmem_long_atomic_fetch_inc,
 };
 #endif
 
@@ -140,7 +411,7 @@ Err CompileCustomFunctions( void )
     if( err < 0 ) return err;
     err = CreateGlueToC( "BARRIER-ALL", i++, C_RETURNS_VOID, 0 );
     if( err < 0 ) return err;
-    err = CreateGlueToC( "MALLOC", i++, C_RETURNS_VOID, 1 );
+    err = CreateGlueToC( "SHARED", i++, C_RETURNS_VALUE, 1 );
     if( err < 0 ) return err;
     err = CreateGlueToC( "BROADCAST", i++, C_RETURNS_VOID, 8 );
     if( err < 0 ) return err;
@@ -172,6 +443,46 @@ Err CompileCustomFunctions( void )
     if( err < 0 ) return err;
     err = CreateGlueToC( "WTIME", i++, C_RETURNS_VALUE, 0 );
     if( err < 0 ) return err;
+    err = CreateGlueToC( "SHARED-FREE", i++, C_RETURNS_VOID, 1 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "PUT32", i++, C_RETURNS_VOID, 4 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "GET32", i++, C_RETURNS_VOID, 4 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "BROADCAST32", i++, C_RETURNS_VOID, 8 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "COLLECT32", i++, C_RETURNS_VOID, 7 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "FCOLLECT32", i++, C_RETURNS_VOID, 7 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "ALL-TO-ALL32", i++, C_RETURNS_VOID, 7 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "FENCE", i++, C_RETURNS_VOID, 0 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "PTR", i++, C_RETURNS_VALUE, 2 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "SET-LOCK", i++, C_RETURNS_VOID, 1 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "CLEAR-LOCK", i++, C_RETURNS_VOID, 1 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "TEST-LOCK", i++, C_RETURNS_VALUE, 1 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "ATOMIC-FETCH", i++, C_RETURNS_VALUE, 2 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "ATOMIC-SET", i++, C_RETURNS_VOID, 3 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "ATOMIC-ADD", i++, C_RETURNS_VOID, 3 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "ATOMIC-FETCH-ADD", i++, C_RETURNS_VALUE, 3 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "ATOMIC-SWAP", i++, C_RETURNS_VALUE, 3 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "ATOMIC-COMPARE-SWAP", i++, C_RETURNS_VALUE, 4 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "ATOMIC-INC", i++, C_RETURNS_VOID, 2 );
+    if( err < 0 ) return err;
+    err = CreateGlueToC( "ATOMIC-FETCH-INC", i++, C_RETURNS_VALUE, 2 );
+    if( err < 0 ) return err;
 
     return 0;
 }
@@ -187,4 +498,3 @@ Err CompileCustomFunctions( void ) { return 0; }
 ****************************************************************/
 
 #endif  /* PF_USER_CUSTOM */
-

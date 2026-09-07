@@ -1,25 +1,80 @@
-( basics )
-: PES 0 SHMEM_OP ;
-: PE 1 SHMEM_OP ;
-: PUT 2 SHMEM_OP ;
-: GET 3 SHMEM_OP ;
-: GLOBAL-EXIT 4 SHMEM_OP ;
+\ Higher-level OpenSHMEM words for pForth.
+\ The C glue still exposes low-level SHMEM words directly. This file provides
+\ Forth-shaped helpers for normal programs.
 
-( collectives )
-: BARRIER-ALL 0 SHMEM_COLL_OP ;
-: BARRIER 1 SHMEM_COLL_OP ;
-: SHARED 2 SHMEM_COLL_OP ;
-: BROADCAST 3 SHMEM_COLL_OP ;
-: SYNC-ALL 4 SHMEM_COLL_OP ; 
-: SYNC 5 SHMEM_COLL_OP ; 
-: COLLECT 6 SHMEM_COLL_OP ;
-: FCOLLECT 7 SHMEM_COLL_OP ;
+anew task-shmem.fth
 
-: AND-REDUCTION 8 SHMEM_COLL_OP ;
-: MAX-REDUCTION 9 SHMEM_COLL_OP ;
-: MIN-REDUCTION 10 SHMEM_COLL_OP ;
-: SUM-REDUCTION 11 SHMEM_COLL_OP ;
-: PROD-REDUCTION 12 SHMEM_COLL_OP ;
-: OR-REDUCTION 13 SHMEM_COLL_OP ;
-: XOR-REDUCTION 14 SHMEM_COLL_OP ;
-: ALLTOALL 15 SHMEM_COLL_OP ; 
+8 constant SHMEM-SYNC-CELLS
+64 constant SHMEM-WORK-CELLS
+
+variable shmem-value
+variable shmem-total
+variable shmem-sync SHMEM-SYNC-CELLS cells allot
+variable shmem-work SHMEM-WORK-CELLS cells allot
+
+: shmem-init-sync ( -- )
+  SHMEM-SYNC-CELLS 0 do 0 shmem-sync I cells + ! loop ;
+
+shmem-init-sync
+
+: pe0? ( -- flag ) pe 0 = ;
+: pe0. ( n -- ) pe0? if . else drop then ;
+: pe0-cr ( -- ) pe0? if cr then ;
+: pe0-type ( c-addr u -- ) pe0? if type else 2drop then ;
+
+: all-barrier ( -- ) barrier-all ;
+: all-sync ( -- ) sync ;
+
+: shared-cells ( n -- addr ) cells shared ;
+: shared-cell ( -- addr ) 1 shared-cells ;
+
+: shared-array ( n <name> -- ) ( index -- addr )
+  create cells allot
+  does> swap cells + ;
+
+: shared-grid ( rows cols <name> -- ) ( row col -- addr )
+  create dup , over , * cells allot
+  does> { row col grid -- addr }
+    row grid @ * col + cells grid 2 cells + + ;
+
+: remote! ( value addr pe -- )
+  >r >r shmem-value ! r> shmem-value 1 r> put ;
+
+: remote@ ( addr pe -- value )
+  >r shmem-value swap 1 r> get shmem-value @ ;
+
+: p! ( value addr pe -- ) remote! ;
+: p@ ( addr pe -- value ) remote@ ;
+
+: atomic+! ( value addr pe -- )
+  >r swap r> atomic-add ;
+
+: put-cells ( dest source cells pe -- ) put ;
+: get-cells ( dest source cells pe -- ) get ;
+
+: all-reduce-sum ( value -- sum )
+  pe0? if 0 shmem-total ! then
+  all-barrier
+  shmem-total swap 0 atomic-add
+  fence all-barrier
+  shmem-total shmem-total 1 0 0 0 pes shmem-sync broadcast
+  shmem-total @ ;
+
+: all-sum ( addr -- )
+  dup @ all-reduce-sum swap ! ;
+
+: all-reduce-max ( value -- max )
+  shmem-value !
+  shmem-value shmem-value 1 0 0 pes shmem-work shmem-sync max-reduction
+  shmem-value @ ;
+
+: all-reduce-min ( value -- min )
+  shmem-value !
+  shmem-value shmem-value 1 0 0 pes shmem-work shmem-sync min-reduction
+  shmem-value @ ;
+
+: all-max ( addr -- )
+  dup @ all-reduce-max swap ! ;
+
+: all-min ( addr -- )
+  dup @ all-reduce-min swap ! ;

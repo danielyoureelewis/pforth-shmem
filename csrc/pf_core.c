@@ -37,7 +37,7 @@
 ***************************************************************/
 
 #include "pf_all.h"
-#include <shmem.h>
+#include "pf_shmem.h"
 /***************************************************************
 ** Global Data
 ***************************************************************/
@@ -123,30 +123,35 @@ static void pfTerm( void )
 void pfDeleteTask( PForthTask task )
 {
     pfTaskData_t *cftd = (pfTaskData_t *)task;
-    FREE_VAR( cftd->td_ReturnLimit );
-    FREE_VAR( cftd->td_StackLimit );
-    pfFreeMem( cftd );
+    if( !cftd ) return;
+
+    if( cftd->td_ReturnLimit ) pfFreeSharedMem( cftd->td_ReturnLimit );
+    if( cftd->td_StackLimit ) pfFreeSharedMem( cftd->td_StackLimit );
+#ifdef PF_SUPPORT_FP
+    if( cftd->td_FloatStackLimit ) pfFreeSharedMem( cftd->td_FloatStackLimit );
+#endif
+    pfFreeSharedMem( cftd );
 }
 
 /* Allocate some extra cells to protect against mild stack underflows. */
 #define STACK_SAFETY  (8)
 PForthTask pfCreateTask( cell_t UserStackDepth, cell_t ReturnStackDepth )
 {
-    pfTaskData_t *cftd;
+    pfTaskData_t *cftd = NULL;
 
-    cftd = ( pfTaskData_t * ) pfAllocMem( sizeof( pfTaskData_t ) );
+    cftd = ( pfTaskData_t * ) pfAllocSharedMem( sizeof( pfTaskData_t ) );
     if( !cftd ) goto nomem;
     pfSetMemory( cftd, 0, sizeof( pfTaskData_t ));
 
 /* Allocate User Stack */
-    cftd->td_StackLimit = (cell_t *) pfAllocMem((ucell_t)(sizeof(cell_t) *
+    cftd->td_StackLimit = (cell_t *) pfAllocSharedMem((ucell_t)(sizeof(cell_t) *
                 (UserStackDepth + STACK_SAFETY)));
     if( !cftd->td_StackLimit ) goto nomem;
     cftd->td_StackBase = cftd->td_StackLimit + UserStackDepth;
     cftd->td_StackPtr = cftd->td_StackBase;
 
 /* Allocate Return Stack */
-    cftd->td_ReturnLimit = (cell_t *) pfAllocMem((ucell_t)(sizeof(cell_t) * ReturnStackDepth) );
+    cftd->td_ReturnLimit = (cell_t *) pfAllocSharedMem((ucell_t)(sizeof(cell_t) * ReturnStackDepth) );
     if( !cftd->td_ReturnLimit ) goto nomem;
     cftd->td_ReturnBase = cftd->td_ReturnLimit + ReturnStackDepth;
     cftd->td_ReturnPtr = cftd->td_ReturnBase;
@@ -154,7 +159,7 @@ PForthTask pfCreateTask( cell_t UserStackDepth, cell_t ReturnStackDepth )
 /* Allocate Float Stack */
 #ifdef PF_SUPPORT_FP
 /* Allocate room for as many Floats as we do regular data. */
-    cftd->td_FloatStackLimit = (PF_FLOAT *) pfAllocMem((ucell_t)(sizeof(PF_FLOAT) *
+    cftd->td_FloatStackLimit = (PF_FLOAT *) pfAllocSharedMem((ucell_t)(sizeof(PF_FLOAT) *
                 (UserStackDepth + STACK_SAFETY)));
     if( !cftd->td_FloatStackLimit ) goto nomem;
     cftd->td_FloatStackBase = cftd->td_FloatStackLimit + UserStackDepth;
@@ -202,10 +207,10 @@ void pfDeleteDictionary( PForthDictionary dictionary )
 
     if( dic->dic_Flags & PF_DICF_ALLOCATED_SEGMENTS )
     {
-        FREE_VAR( dic->dic_HeaderBaseUnaligned );
-        FREE_VAR( dic->dic_CodeBaseUnaligned );
+        if( dic->dic_HeaderBaseUnaligned ) pfFreeSharedMem( (void *) dic->dic_HeaderBaseUnaligned );
+        if( dic->dic_CodeBaseUnaligned ) pfFreeSharedMem( (void *) dic->dic_CodeBaseUnaligned );
     }
-    pfFreeMem( dic );
+    pfFreeSharedMem( dic );
 }
 
 /***************************************************************
@@ -220,7 +225,7 @@ PForthDictionary pfCreateDictionary( cell_t HeaderSize, cell_t CodeSize )
 /* Allocate memory for initial dictionary. */
     pfDictionary_t *dic;
 
-    dic = ( pfDictionary_t * ) pfAllocMem( sizeof( pfDictionary_t ) );
+    dic = ( pfDictionary_t * ) pfAllocSharedMem( sizeof( pfDictionary_t ) );
     if( !dic ) goto nomem;
     pfSetMemory( dic, 0, sizeof( pfDictionary_t ));
 
@@ -236,7 +241,7 @@ PForthDictionary pfCreateDictionary( cell_t HeaderSize, cell_t CodeSize )
 /* Allocate memory for header. */
     if( HeaderSize > 0 )
     {
-        dic->dic_HeaderBaseUnaligned = (ucell_t) pfAllocMem( (ucell_t) HeaderSize + DIC_ALIGNMENT_SIZE );
+        dic->dic_HeaderBaseUnaligned = (ucell_t) pfAllocSharedMem( (ucell_t) HeaderSize + DIC_ALIGNMENT_SIZE );
         if( !dic->dic_HeaderBaseUnaligned ) goto nomem;
 /* Align header base. */
         dic->dic_HeaderBase = DIC_ALIGN(dic->dic_HeaderBaseUnaligned);
@@ -250,7 +255,7 @@ PForthDictionary pfCreateDictionary( cell_t HeaderSize, cell_t CodeSize )
     }
 
 /* Allocate memory for code. */
-    dic->dic_CodeBaseUnaligned = (ucell_t) pfAllocMem( (ucell_t) CodeSize + DIC_ALIGNMENT_SIZE );
+    dic->dic_CodeBaseUnaligned = (ucell_t) pfAllocSharedMem( (ucell_t) CodeSize + DIC_ALIGNMENT_SIZE );
     if( !dic->dic_CodeBaseUnaligned ) goto nomem;
     dic->dic_CodeBase = DIC_ALIGN(dic->dic_CodeBaseUnaligned);
     pfSetMemory( (char *) dic->dic_CodeBase, 0x5A, (ucell_t) CodeSize);

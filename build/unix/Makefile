@@ -39,7 +39,7 @@ FULL_WARNINGS =  \
 
 DEBUGOPTS = -g
 
-EXTRA_CCOPTS = -DPF_USER_CUSTOM="/home/user/parallel-forths/csrc/pfcustom.c"
+EXTRA_CCOPTS =
 
 CCOPTS = $(WIDTHOPT) -x c -O2 $(FULL_WARNINGS) $(EXTRA_CCOPTS) $(DEBUGOPTS)
 
@@ -51,7 +51,7 @@ EMBCCOPTS = -DPF_STATIC_DIC #-DPF_NO_FILEIO
 #######################################
 PFINCLUDES = pf_all.h pf_cglue.h pf_clib.h pf_core.h pf_float.h \
 	pf_guts.h pf_host.h pf_inc1.h pf_io.h pf_mem.h pf_save.h \
-	pf_text.h pf_types.h pf_win32.h pf_words.h pfcompfp.h \
+	pf_shmem.h pf_text.h pf_types.h pf_win32.h pf_words.h pfcompfp.h \
 	pfcompil.h pfdicdat_arm.h pfinnrfp.h pforth.h
 PFBASESOURCE = pf_cglue.c pf_clib.c pf_core.c pf_inner.c \
 	pf_io.c pf_io_none.c pf_main.c pf_mem.c pf_save.c \
@@ -64,7 +64,17 @@ XCFLAGS = $(CCOPTS)
 XCPPFLAGS = -DPF_SUPPORT_FP -D_DEFAULT_SOURCE -D_GNU_SOURCE
 XLDFLAGS = $(WIDTHOPT)
 
-CPPFLAGS = -I. $(XCPPFLAGS)
+SHMEM ?= 0
+OSHRUN ?= oshrun
+OSHRUN_FLAGS ?= --mca memheap_base_max_segments 128
+PFORTH_RUN =
+ifeq ($(SHMEM),1)
+CC = oshcc
+XCPPFLAGS += -DPF_USE_OPENSHMEM
+PFORTH_RUN = $(OSHRUN) $(OSHRUN_FLAGS) -n 1
+endif
+
+CPPFLAGS = -I. -I$(CSRCDIR) $(XCPPFLAGS)
 CFLAGS = $(XCFLAGS)
 LDFLAGS = $(XLDFLAGS)
 
@@ -103,11 +113,11 @@ $(PFDICAPP): $(PFINCLUDES) $(PFOBJS)
 
 # Build basic dictionary image by running newly built pforth and including "system.fth".
 $(PFORTHDIC): $(PFDICAPP)
-	wd=$$(pwd); (cd $(FTHDIR); $${wd}/$(PFDICAPP) -i system.fth)
+	wd=$$(pwd); (cd $(FTHDIR); $(PFORTH_RUN) $${wd}/$(PFDICAPP) -i system.fth)
 	(cd $(FTHDIR); cat pforth.dic; rm -f pforth.dic) > $@
 
 $(PFDICDAT): $(PFORTHDIC) $(PFDICAPP)
-	echo 'include $(FTHDIR)/savedicd.fth SDAD BYE' | ./$(PFDICAPP) -d $(PFORTHDIC)
+	echo 'include $(FTHDIR)/savedicd.fth SDAD BYE' | $(PFORTH_RUN) ./$(PFDICAPP) -d $(PFORTHDIC)
 
 $(PFORTHAPP): $(PFDICDAT) $(PFEMBOBJS)
 	$(LINK) -o $@ $(PFEMBOBJS) $(LDADD) -lm

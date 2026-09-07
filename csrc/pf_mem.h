@@ -31,11 +31,16 @@
     char *pfAllocMem( cell_t NumBytes );
     void  pfFreeMem( void *Mem );
 
+    #define pfAllocSharedMem pfAllocMem
+    #define pfFreeSharedMem pfFreeMem
+
     #ifdef __cplusplus
     }
     #endif
 
 #else
+
+    #include "pf_shmem.h"
 
     #ifdef PF_USER_MALLOC
 /* Get user prototypes or macros from include file.
@@ -43,10 +48,30 @@
 */
         #include PF_USER_MALLOC
     #else
+        #include <stdlib.h>
+
         #define pfInitMemoryAllocator()
-        #define pfAllocMem shmem_malloc
-        #define pfFreeMem shmem_free
+
+        static inline char *pfAllocMem( cell_t NumBytes )
+        {
+            return (char *) malloc( (size_t) NumBytes );
+        }
+
+        static inline void pfFreeMem( void *Mem )
+        {
+            free( Mem );
+        }
     #endif
+
+    static inline char *pfAllocSharedMem( cell_t NumBytes )
+    {
+        return (char *) shmem_malloc( (size_t) NumBytes );
+    }
+
+    static inline void pfFreeSharedMem( void *Mem )
+    {
+        shmem_free( Mem );
+    }
 
 #endif /* PF_NO_MALLOC */
 

@@ -1,6 +1,6 @@
 #include <sys/time.h>
 
-unsigned long wtime()
+unsigned long wtime( void )
 {
     //static int sec = -1;
     struct timeval tv;

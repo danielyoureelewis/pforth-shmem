@@ -17,17 +17,33 @@ README for pforth-shmem - a Partitioned Global Address Space (PGAS) parallel FOR
 
 This is essentially a wrapper around the openSHMEM library for FORTH. pForth was chosen as a code base for this project because of it's straight forward implementation, and because it is written in ANSI C.
 
-Last updated: 12/20/2020
+Last updated: 09/07/2026
 
 # BUILD AND TEST:
 
 WARNING: This project has only been tested on Debian with openMPI openSHMEM! If you run it with another openSHMEM or OS let me know!
 
-1. Install an openSHMEM implementation. https://www.open-mpi.org/
+1. Install an openSHMEM implementation for multi-PE runs. https://www.open-mpi.org/
 2. Clone the repository. 
  ``` git clone https://github.com/danielyoureelewis/parallel-forth.git ```
 3. Run ``` cd parallel-forth/build/unix ```
-4. Run ``` ./build_and_test.sh ``` - You'll see tons of output. If everything worked. The last 4 lines will be (the PE that reports their number first can change):
+4. Run ``` ./build_and_test.sh ``` - You'll see tons of output. If OpenSHMEM tools are installed, the script builds with ```make SHMEM=1``` and runs with ```oshrun --mca memheap_base_max_segments 128 -n 2```. If ```oshcc``` or ```oshrun``` is not available, it builds the serial fallback and runs the same smoke tests with one PE.
+
+You can also build explicitly:
+```
+make              # serial fallback for local development
+make SHMEM=1      # OpenSHMEM build, expects oshcc and oshrun
+```
+
+The raw OpenSHMEM bindings remain available, but normal programs should start
+with the higher-level words in ```fth/shmem.fth```. That layer provides common
+Forth-style helpers including ```shared-cells```, ```shared-array```,
+```shared-grid```, ```remote!```, ```remote@```, ```all-reduce-sum```,
+```all-sum```, ```all-max```, ```all-min```, ```put-cells```, ```get-cells```,
+```all-barrier```, ```all-sync```, and PE-0 output helpers like ```pe0?``` and
+```pe0.```.
+
+If everything worked with OpenSHMEM. The last 4 lines will be (the PE that reports their number first can change):
 ``` 
 Including: test.fth
 NUM PES: 2 
@@ -53,7 +69,26 @@ Testing Collectives:
 Testing Errors:
 ```
 
-5. You can run in interactive mode like so. ``` oshrun -n 4 ./pforth_standalone ```
+5. You can run in interactive mode with OpenSHMEM like so. ``` oshrun --mca memheap_base_max_segments 128 -n 4 ./pforth_standalone ```
+The root-level wrapper also starts an interactive multi-PE interpreter when no
+program path is provided:
+```
+./pforth-shmem -n 4
+```
+
+Example programs live in ```examples/```. From the repository root, run them with:
+```
+./pforth-shmem -n 4 examples/pi-reduction.fth
+./pforth-shmem -n 4 examples/hot-plate.fth
+./pforth-shmem -n 4 examples/game-of-life.fth
+```
+
+Or from ```build/unix```, run them with the built standalone interpreter:
+```
+oshrun --mca memheap_base_max_segments 128 -n 4 ./pforth_standalone ../../examples/pi-reduction.fth
+oshrun --mca memheap_base_max_segments 128 -n 4 ./pforth_standalone ../../examples/hot-plate.fth
+oshrun --mca memheap_base_max_segments 128 -n 4 ./pforth_standalone ../../examples/game-of-life.fth
+```
    
 Here is an example run:
 ```
@@ -103,12 +138,12 @@ Stack<16>
 ```
 
 # TODO:
-In interactive mode the stack should print the PE to which it belongs
+DONE: In interactive mode the stack should print the PE to which it belongs
 
-Test floating point ops
+DONE: Test standard floating point ops. The standard pForth test target runs ```t_floats.fth```. Multi-PE ```FSUM-REDUCTION``` still needs focused follow-up; ```build/unix/cpi.fth``` currently aborts under this OpenSHMEM runtime.
 
-Add more SHMEM functions - collectives etc
+DONE: Add more SHMEM functions - collectives etc. The dictionary now exposes 32-bit data movement and collectives (`PUT32`, `GET32`, `BROADCAST32`, `COLLECT32`, `FCOLLECT32`, `ALL-TO-ALL32`), memory-ordering and address helpers (`FENCE`, `PTR`), locks (`SET-LOCK`, `CLEAR-LOCK`, `TEST-LOCK`), and cell-sized atomics (`ATOMIC-FETCH`, `ATOMIC-SET`, `ATOMIC-ADD`, `ATOMIC-FETCH-ADD`, `ATOMIC-SWAP`, `ATOMIC-COMPARE-SWAP`, `ATOMIC-INC`, `ATOMIC-FETCH-INC`).
 
 Look for a way to integrate MPI functions
 
-Segregate memory so that all allocations do not need to be symmetric.
+DONE: Segregate memory so that all allocations do not need to be symmetric. Ordinary pForth allocation now uses process-local memory; explicit ```SHARED```/```SHARED-FREE``` and the task/dictionary allocations that still participate in OpenSHMEM communication remain symmetric.

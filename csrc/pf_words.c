@@ -51,7 +51,9 @@ void ffDotS( void )
     cell_t *sp;
     cell_t i, Depth;
 
-    MSG("Stack<");
+    MSG("PE<");
+    MSG( ConvertNumberToText( shmem_my_pe(), 10, TRUE, 1 ) );
+    MSG("> Stack<");
     MSG( ConvertNumberToText( gVarBase, 10, TRUE, 1 ) ); /* Print base in decimal. */
     MSG("> ");
 

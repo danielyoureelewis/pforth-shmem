@@ -29,7 +29,7 @@
 ** 961204 PLB Added PF_STATIC_DIC
 ** 000623 PLB Cast chars as ucell_t before shifting for 16 bit systems.
 ***************************************************************/
-#include <shmem.h>
+#include "pf_shmem.h"
 #include <assert.h>
 
 #include "pf_all.h"
@@ -846,4 +846,3 @@ nomem_error:
 
     return NULL;
 }
-

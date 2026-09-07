@@ -1,0 +1,62 @@
+#!/bin/sh
+set -eu
+
+usage()
+{
+    echo "usage: ./pforth-shmem [-n pes] [path/to/program.fth [args...]]" >&2
+}
+
+pes=2
+
+while [ "$#" -gt 0 ]
+do
+    case "$1" in
+        -n|--np|--pes)
+            if [ "$#" -lt 2 ]
+            then
+                usage
+                exit 2
+            fi
+            pes=$2
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+cd "$root/build/unix"
+
+if [ ! -x ./pforth_standalone ]
+then
+    make SHMEM=1
+fi
+
+oshrun_cmd=${OSHRUN:-oshrun}
+oshrun_flags=${OSHRUN_FLAGS:---mca memheap_base_max_segments 128}
+
+if [ "$#" -lt 1 ]
+then
+    exec "$oshrun_cmd" $oshrun_flags -n "$pes" ./pforth_standalone
+fi
+
+script=$1
+shift
+
+case "$script" in
+    /*) script_path=$script ;;
+    *) script_path=$root/$script ;;
+esac
+
+exec "$oshrun_cmd" $oshrun_flags -n "$pes" ./pforth_standalone "$script_path" "$@"

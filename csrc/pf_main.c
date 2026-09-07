@@ -22,7 +22,7 @@
  ** OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  **
  ***************************************************************/
-#include <shmem.h>
+#include "pf_shmem.h"
 #if (defined(PF_NO_STDIO) || defined(PF_EMBEDDED))
 #define NULL  ((void *) 0)
 #define ERR(msg) /* { printf msg; } */
@@ -151,5 +151,4 @@ on_error:
 }
 
 #endif  /* PF_EMBEDDED */
-
 
