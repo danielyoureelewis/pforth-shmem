@@ -23,6 +23,10 @@
 
 #include "pf_all.h"
 
+#define PF_IO_LINE_BUFFER_SIZE (4096)
+
+static char gOutputLineBuffer[PF_IO_LINE_BUFFER_SIZE];
+static cell_t gOutputLineLength = 0;
 
 /***************************************************************
  ** Initialize I/O system.
@@ -34,30 +38,126 @@ void ioInit( void )
 }
 void ioTerm( void )
 {
+    ioFlushOutput();
     sdTerminalTerm();
 }
 
 /***************************************************************
  ** Send single character to output stream.
  */
-void ioEmit( char c )
+static cell_t ioRawEmit( char c )
 {
     cell_t Result;
 
     Result = sdTerminalOut(c);
     if( Result < 0 ) EXIT(1);
+    return Result;
+}
 
+static void ioTrackEmit( char c )
+{
     if( gCurrentTask )
     {
         if(c == '\n')
         {
             gCurrentTask->td_OUT = 0;
-            sdTerminalFlush();
         }
         else
         {
             gCurrentTask->td_OUT++;
         }
+    }
+}
+
+static int ioUseLineBuffer( void )
+{
+    return shmem_n_pes() > 1;
+}
+
+static int ioLineAlreadyHasPELabel( void )
+{
+    return (gOutputLineLength >= 3) &&
+        (gOutputLineBuffer[0] == 'P') &&
+        (gOutputLineBuffer[1] == 'E') &&
+        (gOutputLineBuffer[2] == '<');
+}
+
+static void ioLockOutput( void )
+{
+    while( shmem_long_atomic_compare_swap( gOutputLock, 0, 1, 0 ) != 0 )
+    {
+        /* Spin until this PE owns the shared output stream. */
+    }
+}
+
+static void ioUnlockOutput( void )
+{
+    shmem_long_atomic_swap( gOutputLock, 0, 0 );
+}
+
+static void ioRawType( const char *s )
+{
+    while( *s )
+    {
+        ioRawEmit( *s++ );
+    }
+}
+
+void ioFlushOutput( void )
+{
+    cell_t i;
+    int UseLineBuffer = ioUseLineBuffer();
+
+    if( gOutputLineLength == 0 )
+    {
+        return;
+    }
+
+    if( UseLineBuffer )
+    {
+        ioLockOutput();
+        if( !ioLineAlreadyHasPELabel() )
+        {
+            ioRawType( "PE<" );
+            ioRawType( ConvertNumberToText( shmem_my_pe(), 10, TRUE, 1 ) );
+            ioRawType( "> " );
+        }
+    }
+
+    for( i = 0; i < gOutputLineLength; i++ )
+    {
+        ioRawEmit( gOutputLineBuffer[i] );
+    }
+
+    sdTerminalFlush();
+
+    if( UseLineBuffer )
+    {
+        ioUnlockOutput();
+    }
+
+    gOutputLineLength = 0;
+}
+
+void ioEmit( char c )
+{
+    if( !ioUseLineBuffer() )
+    {
+        ioRawEmit( c );
+        ioTrackEmit( c );
+        if( c == '\n' )
+        {
+            sdTerminalFlush();
+        }
+        return;
+    }
+
+    gOutputLineBuffer[gOutputLineLength++] = c;
+    ioTrackEmit( c );
+
+    if( (c == '\n') || (gOutputLineLength >= PF_IO_LINE_BUFFER_SIZE) )
+    {
+        ioFlushOutput();
     }
 }
 
@@ -129,7 +229,7 @@ cell_t ioAccept( char *buffer, cell_t maxChars )
             break;
 
         default:
-            sdTerminalEcho( (char) c );
+            ioEmit( (char) c );
             *p++ = (char) c;
             len++;
             break;
@@ -139,7 +239,7 @@ cell_t ioAccept( char *buffer, cell_t maxChars )
 
 gotline:
     sdDisableInput();
-    sdTerminalEcho( SPACE );
+    ioEmit( '\n' );
 
 /* NUL terminate line to simplify printing when debugging. */
     if( len < maxChars ) p[len] = '\0';
@@ -241,4 +341,3 @@ ThrowCode sdResizeFile( FileStream * File, uint64_t NewSize )
 }
 
 #endif
-

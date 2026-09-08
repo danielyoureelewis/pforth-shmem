@@ -51,6 +51,11 @@ void ffDotS( void )
     cell_t *sp;
     cell_t i, Depth;
 
+    if( gCurrentTask->td_OUT > 0 )
+    {
+        EMIT_CR;
+    }
+
     MSG("PE<");
     MSG( ConvertNumberToText( shmem_my_pe(), 10, TRUE, 1 ) );
     MSG("> Stack<");

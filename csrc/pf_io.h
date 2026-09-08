@@ -174,6 +174,7 @@ extern "C" {
 cell_t ioAccept( char *Target, cell_t n1 );
 cell_t ioKey( void);
 void ioEmit( char c );
+void ioFlushOutput( void );
 void ioType( const char *s, cell_t n);
 
 #ifdef __cplusplus

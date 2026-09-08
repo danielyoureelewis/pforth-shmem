@@ -47,10 +47,28 @@
 #define FALSE (0)
 #endif
 
+long pSync[SHMEM_BARRIER_SYNC_SIZE];
+long *gOutputLock;
+
+static void pfInitShmemGlobals( void )
+{
+    for(int i = 0; i < SHMEM_BARRIER_SYNC_SIZE; i++)
+        pSync[i] = SHMEM_SYNC_VALUE;
+    gOutputLock = shmem_malloc( sizeof(long) );
+    if( gOutputLock == NULL )
+    {
+        ERR(("Could not allocate SHMEM output lock.\n"));
+        shmem_global_exit(1);
+    }
+    *gOutputLock = 0;
+    shmem_barrier_all();
+}
+
 #ifdef PF_EMBEDDED
 int main( void )
 {
   	shmem_init();
+    pfInitShmemGlobals();
     char IfInit = 0;
     const char *DicName = NULL;
     const char *SourceName = NULL;
@@ -59,13 +77,10 @@ int main( void )
 }
 #else
 
-long pSync[SHMEM_BARRIER_SYNC_SIZE];
-
 int main( int argc, char **argv )
 {
     shmem_init();
-    for(int i = 0; i < SHMEM_BARRIER_SYNC_SIZE; i++)
-        pSync[i] = SHMEM_SYNC_VALUE;
+    pfInitShmemGlobals();
 
 #ifdef PF_STATIC_DIC
     const char *DicName = NULL;
@@ -151,4 +166,3 @@ on_error:
 }
 
 #endif  /* PF_EMBEDDED */
-
