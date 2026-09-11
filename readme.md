@@ -75,6 +75,11 @@ program path is provided:
 ```
 ./pforth-shmem -n 4
 ```
+It can also load a saved pForth dictionary image:
+```
+./pforth-shmem -n 4 -d output/session.dic
+./pforth-shmem -n 4 -d output/session.dic examples/raw-shmem.fth
+```
 
 Example programs live in ```examples/```. From the repository root, run them with:
 ```
@@ -88,6 +93,17 @@ Or from ```build/unix```, run them with the built standalone interpreter:
 oshrun --mca memheap_base_max_segments 128 -n 4 ./pforth_standalone ../../examples/pi-reduction.fth
 oshrun --mca memheap_base_max_segments 128 -n 4 ./pforth_standalone ../../examples/hot-plate.fth
 oshrun --mca memheap_base_max_segments 128 -n 4 ./pforth_standalone ../../examples/game-of-life.fth
+```
+
+For AI-agent and tool-driven exploration, see
+```docs/ai-agent-interpreter.md```.  The repository includes
+```fth/agent.fth``` for parseable interpreter markers and
+```tools/pforth_agent.py``` for keeping a live pForth process open while an
+agent dynamically evaluates snippets and inspects the stack:
+
+```
+tools/pforth_agent.py --pes 1 --eval '1 2 +'
+tools/pforth_agent.py --pes 2 --eval 'pe pes agent-stack'
 ```
    
 Here is an example run:

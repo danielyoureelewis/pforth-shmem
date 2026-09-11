@@ -1,0 +1,35 @@
+{
+  "method": "estimated_tokens = ceil((input_bytes + visible_output_bytes) / 4)",
+  "measurements": [
+    {
+      "mode": "one_big_file",
+      "evals": 1,
+      "input_bytes": 4416,
+      "visible_output_bytes": 433,
+      "total_bytes": 4849,
+      "estimated_tokens": 1213,
+      "output_file": "output/measure-big-file.bmp",
+      "output_valid": true
+    },
+    {
+      "mode": "current_verbose_interactive",
+      "evals": 56,
+      "input_bytes": 4351,
+      "visible_output_bytes": 9279,
+      "total_bytes": 13630,
+      "estimated_tokens": 3408,
+      "output_file": "output/measure-repl.bmp",
+      "output_valid": true
+    },
+    {
+      "mode": "proposed_compact_interactive",
+      "evals": 56,
+      "input_bytes": 4351,
+      "visible_output_bytes": 331,
+      "total_bytes": 4682,
+      "estimated_tokens": 1171,
+      "output_file": "output/measure-repl.bmp",
+      "output_valid": true
+    }
+  ]
+}

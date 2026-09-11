@@ -11,3 +11,8 @@ fth/fatest1.txt
 fth/pforth.dic
 **/.DS_Store
 *~
+__pycache__/
+*.pyc
+output/*.bmp
+output/*.dic
+!output/interpreter-token-measurement.json

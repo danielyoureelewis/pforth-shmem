@@ -98,15 +98,43 @@ static cell_t pf_shmem_long_atomic_fetch_inc(cell_t target, cell_t pe);
 
 static cell_t pf_shmem_put(cell_t dest, cell_t source, cell_t nelems, cell_t pe)
 {
+    size_t numBytes = (size_t)nelems * sizeof(cell_t);
+    int targetPe = (int)pe;
+
     //fprintf(stderr, "SHMEM_PUT: %p %p  0x%08x 0x%08x\n", M_STACK(3), M_STACK(2), M_STACK(1), M_STACK(0));
-    shmem_putmem((char*)dest, (char*)source, (size_t)nelems * sizeof(cell_t), (int)pe);
+    if( (dest == source) && (targetPe != shmem_my_pe()) )
+    {
+        void *temp = pfAllocMem( (cell_t)numBytes );
+        if( temp == NULL ) return -1;
+        pfCopyMemory( temp, (void *)source, numBytes );
+        shmem_putmem((char*)dest, temp, numBytes, targetPe);
+        pfFreeMem( temp );
+    }
+    else
+    {
+        shmem_putmem((char*)dest, (char*)source, numBytes, targetPe);
+    }
     return 0;
 }
 
 static cell_t pf_shmem_get(cell_t dest, cell_t source, cell_t nelems, cell_t pe)
 {
+    size_t numBytes = (size_t)nelems * sizeof(cell_t);
+    int sourcePe = (int)pe;
+
     //fprintf(stderr, "SHMEM_GET: %p %p  0x%08x 0x%08x\n", M_STACK(3), M_STACK(2), M_STACK(1), M_STACK(0));
-    shmem_getmem((char*)dest, (char*)source, (size_t)nelems * sizeof(cell_t), (int)pe);
+    if( (dest == source) && (sourcePe != shmem_my_pe()) )
+    {
+        void *temp = pfAllocMem( (cell_t)numBytes );
+        if( temp == NULL ) return -1;
+        shmem_getmem(temp, (char*)source, numBytes, sourcePe);
+        pfCopyMemory( (void *)dest, temp, numBytes );
+        pfFreeMem( temp );
+    }
+    else
+    {
+        shmem_getmem((char*)dest, (char*)source, numBytes, sourcePe);
+    }
     return 0;
 }
 

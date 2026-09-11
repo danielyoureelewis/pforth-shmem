@@ -3,10 +3,11 @@ set -eu
 
 usage()
 {
-    echo "usage: ./pforth-shmem [-n pes] [path/to/program.fth [args...]]" >&2
+    echo "usage: ./pforth-shmem [-n pes] [-d dictionary.dic] [path/to/program.fth [args...]]" >&2
 }
 
 pes=2
+dic=
 
 while [ "$#" -gt 0 ]
 do
@@ -19,6 +20,19 @@ do
             fi
             pes=$2
             shift 2
+            ;;
+        -d)
+            if [ "$#" -lt 2 ]
+            then
+                usage
+                exit 2
+            fi
+            dic=$2
+            shift 2
+            ;;
+        -d*)
+            dic=${1#-d}
+            shift
             ;;
         -h|--help)
             usage
@@ -46,8 +60,20 @@ fi
 oshrun_cmd=${OSHRUN:-oshrun}
 oshrun_flags=${OSHRUN_FLAGS:---mca memheap_base_max_segments 128}
 
+if [ -n "$dic" ]
+then
+    case "$dic" in
+        /*) dic_path=$dic ;;
+        *) dic_path=$root/$dic ;;
+    esac
+fi
+
 if [ "$#" -lt 1 ]
 then
+    if [ -n "$dic" ]
+    then
+        exec "$oshrun_cmd" $oshrun_flags -n "$pes" ./pforth_standalone -d "$dic_path"
+    fi
     exec "$oshrun_cmd" $oshrun_flags -n "$pes" ./pforth_standalone
 fi
 
@@ -58,5 +84,10 @@ case "$script" in
     /*) script_path=$script ;;
     *) script_path=$root/$script ;;
 esac
+
+if [ -n "$dic" ]
+then
+    exec "$oshrun_cmd" $oshrun_flags -n "$pes" ./pforth_standalone -d "$dic_path" "$script_path" "$@"
+fi
 
 exec "$oshrun_cmd" $oshrun_flags -n "$pes" ./pforth_standalone "$script_path" "$@"
